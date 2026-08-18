@@ -29,41 +29,36 @@ public class Start_CustomBloomRenderPass : ScriptableRenderPass
     class PassData
     {
         public TextureHandle source;
+        public Material material;
     }
     public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
     {
-
-        var tempTexExist = frameData.Contains<TempTexture>();
         var temp = frameData.GetOrCreate<TempTexture>();
 
-        // First time running this pass.
-        if(!tempTexExist)
-        {
-            var resourceData = frameData.Get<UniversalResourceData>();
-            temp.texture = resourceData.activeColorTexture;
-        }
+        var resourceData = frameData.Get<UniversalResourceData>();
+        TextureDesc desc = renderGraph.GetTextureDesc(resourceData.activeColorTexture);
+        desc.name = "Bloom";
+        desc.clearBuffer = false;
+        desc.width = desc.width / 2;
+        desc.height = desc.height / 2;
+
+        RenderTextureDescriptor textureProperties = new RenderTextureDescriptor(desc);
+        temp.texture = UniversalRenderer.CreateRenderGraphTexture(renderGraph, textureProperties, "Down Sampling", false);
 
 
         using var builder = renderGraph.AddRasterRenderPass<PassData>("Custom Bloom Render Pass", out var passData);
 
         passData.source = resourceData.activeColorTexture;
 
-        
-        TextureDesc desc = renderGraph.GetTextureDesc(resourceData.activeColorTexture);
-        desc.name = "Bloom";
-        desc.clearBuffer = false;
-
-        RenderTextureDescriptor textureProperties = new RenderTextureDescriptor(desc.width / 2, desc.height / 2);
-
-        TextureHandle destination = renderGraph.CreateTexture(desc);
-
-
-
         builder.UseTexture(passData.source, AccessFlags.Read);
-        builder.UseTexture(temp, AccessFlags.Read);
-        builder.SetRenderAttachment(temp, 0, AccessFlags.Write);
-        builder.SetRenderAttachment(destination, 0, AccessFlags.Write);
-    
+        builder.SetRenderAttachment(temp.texture, 0, AccessFlags.Write);
+
+        resourceData.cameraColor = temp.texture;
+
+        builder.SetRenderFunc((PassData data, RasterGraphContext context) =>
+        {
+            Blitter.BlitTexture(context.cmd, data.source, new Vector4(1, 1, 0, 0), data.material, 0);
+        });
     
     }
 
